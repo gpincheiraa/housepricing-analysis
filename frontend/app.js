@@ -21,19 +21,71 @@ window.onload = () => {
 async function handleGoogleCredential(response) {
   const result = document.getElementById("result");
 
-  result.textContent = "Autenticando...";
+  result.textContent = "Autenticando con Google...";
 
   try {
-    const responseBff = await fetch(`${BFF_URL}/me`, {
+    // 1. Validar identidad contra nuestro BFF
+    const bffResponse = await fetch(`${BFF_URL}/me`, {
+      method: "GET",
       headers: {
         Authorization: `Bearer ${response.credential}`,
       },
     });
 
-    const data = await responseBff.json();
+    const userData = await bffResponse.json();
 
-    result.textContent = JSON.stringify(data, null, 2);
+    if (!bffResponse.ok) {
+      throw new Error(
+        userData.detail || "No fue posible autenticar al usuario",
+      );
+    }
+
+    result.textContent =
+      `Usuario autenticado:\n\n` +
+      `${JSON.stringify(userData, null, 2)}\n\n` +
+      `Generando conexión con Mercado Libre...`;
+
+    // 2. Pedir al BFF la URL de autorización de Mercado Libre
+    const mlResponse = await fetch(
+      `${BFF_URL}/oauth/mercadolibre`,
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${response.credential}`,
+        },
+      },
+    );
+
+    const mlData = await mlResponse.json();
+
+    if (!mlResponse.ok) {
+      throw new Error(
+        mlData.detail ||
+        "No fue posible iniciar la autenticación con Mercado Libre",
+      );
+    }
+
+    // 3. Mostrar información de prueba
+    result.textContent =
+      `Usuario autenticado:\n\n` +
+      `${JSON.stringify(userData, null, 2)}\n\n` +
+      `Mercado Libre:\n\n` +
+      `${JSON.stringify(
+        {
+          google_user: mlData.google_user,
+          authorization_url: mlData.authorization_url,
+        },
+        null,
+        2,
+      )}`;
+
+    // 4. Abrir Mercado Libre
+    window.location.href = mlData.authorization_url;
+
   } catch (error) {
-    result.textContent = String(error);
+    console.error(error);
+
+    result.textContent =
+      `Error:\n\n${error.message}`;
   }
 }
