@@ -390,6 +390,26 @@ def ml_credentials_exist(google_user_id: str) -> bool:
 
     return blob.exists()
 
+def get_ml_user(access_token: str) -> dict:
+    response = requests.get(
+        "https://api.mercadolibre.com/users/me",
+        headers={
+            "Authorization": f"Bearer {access_token}",
+        },
+        timeout=15,
+    )
+
+    if not response.ok:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "message": "Mercado Libre user request failed",
+                "status": response.status_code,
+            },
+        )
+
+    return response.json()
+
 def load_ml_credentials(
     google_user_id: str,
 ) -> dict:
@@ -688,22 +708,24 @@ def me_mercadolibre(
         "connected": connected,
     }
 
-@app.get("/me/mercadolibre/test")
-def test_mercadolibre(
+@app.get("/me/mercadolibre/user")
+def me_mercadolibre_user(
     authorization: str | None = Header(default=None),
 ) -> dict:
-    claims = get_google_user(
-        authorization
-    )
+    claims = get_google_user(authorization)
 
     access_token = refresh_ml_access_token(
         claims["sub"]
     )
 
+    ml_user = get_ml_user(access_token)
+
     return {
         "authenticated": True,
-        "mercadolibre": True,
-        "access_token_obtained": bool(
-            access_token
-        ),
+        "mercadolibre": {
+            "id": ml_user.get("id"),
+            "nickname": ml_user.get("nickname"),
+            "country_id": ml_user.get("country_id"),
+            "site_id": ml_user.get("site_id"),
+        },
     }
