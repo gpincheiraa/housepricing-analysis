@@ -5,7 +5,6 @@ from urllib.parse import urlencode
 import requests
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
 from google.auth.transport import requests as google_requests
 from google.cloud import secretmanager
 from google.oauth2 import id_token
@@ -23,6 +22,7 @@ app.add_middleware(
 )
 
 GOOGLE_CLIENT_ID = os.environ["GOOGLE_CLIENT_ID"]
+GCP_PROJECT_ID = os.environ["GCP_PROJECT_ID"]
 
 ML_REDIRECT_URI = (
     "https://housepricing-web-bff-vyghkhukra-tl.a.run.app"
@@ -32,7 +32,6 @@ ML_REDIRECT_URI = (
 ML_AUTH_URL = "https://auth.mercadolibre.com.ar/authorization"
 ML_TOKEN_URL = "https://api.mercadolibre.com/oauth/token"
 
-GCP_PROJECT_ID = os.environ["GCP_PROJECT_ID"]
 
 def get_secret(secret_id: str) -> str:
     client = secretmanager.SecretManagerServiceClient()
@@ -48,11 +47,13 @@ def get_secret(secret_id: str) -> str:
 
     return response.payload.data.decode("utf-8")
 
+
 def get_ml_credentials() -> tuple[str, str]:
     client_id = get_secret("ml-client-id")
     client_secret = get_secret("ml-client-secret")
 
     return client_id, client_secret
+
 
 def get_google_user(
     authorization: str | None,
@@ -112,6 +113,37 @@ def me(
             "picture": claims.get("picture"),
         },
     }
+
+
+@app.get("/oauth/mercadolibre")
+def mercadolibre_authorize(
+    authorization: str | None = Header(default=None),
+) -> dict:
+    claims = get_google_user(authorization)
+
+    google_user_id = claims["sub"]
+
+    client_id, _ = get_ml_credentials()
+
+    state = secrets.token_urlsafe(32)
+
+    authorization_url = (
+        f"{ML_AUTH_URL}?"
+        + urlencode(
+            {
+                "response_type": "code",
+                "client_id": client_id,
+                "redirect_uri": ML_REDIRECT_URI,
+                "state": state,
+            }
+        )
+    )
+
+    return {
+        "authorization_url": authorization_url,
+        "google_user": google_user_id,
+    }
+
 
 @app.get("/oauth/mercadolibre/callback")
 def mercadolibre_callback(
