@@ -316,14 +316,17 @@ function updateSearchesUI(data) {
     item.className =
       "border rounded p-3 mb-2";
 
-    const name =
+
+    const title =
       document.createElement("div");
 
-    name.className =
+    title.className =
       "fw-semibold";
 
-    name.textContent =
-      search.name || "Sin nombre";
+    title.textContent =
+      search.location?.communes?.join(", ")
+      || "Sin comunas";
+
 
     const details =
       document.createElement("div");
@@ -335,14 +338,21 @@ function updateSearchesUI(data) {
       [
         search.operation === "rent"
           ? "Arriendo"
-          : search.operation,
-        search.region,
-        search.communes?.join(", "),
+          : search.operation === "sale"
+            ? "Venta"
+            : search.operation,
+
+        search.location?.region,
+
+        search.enabled
+          ? "Activa"
+          : "Inactiva",
       ]
         .filter(Boolean)
         .join(" · ");
 
-    item.appendChild(name);
+
+    item.appendChild(title);
     item.appendChild(details);
 
     searchesElement.appendChild(item);
@@ -384,28 +394,30 @@ async function handleSearchSubmit(event) {
     }
 
     const search = {
-      name:
+      enabled:
         document.getElementById(
-          "search-name"
-        ).value.trim(),
+          "search-enabled"
+        ).checked,
 
       operation:
         document.getElementById(
           "search-operation"
         ).value,
 
-      region:
-        document.getElementById(
-          "search-region"
-        ).value,
+      location: {
+        region:
+          document.getElementById(
+            "search-region"
+          ).value,
 
-      communes,
-
-      enabled:
-        document.getElementById(
-          "search-enabled"
-        ).checked,
+        communes,
+      },
     };
+
+    console.log(
+      "Creating search:",
+      search
+    );
 
     resultElement.textContent =
       "Guardando búsqueda...";
