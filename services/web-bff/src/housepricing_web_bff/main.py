@@ -7,6 +7,7 @@ import os
 import secrets
 import time
 
+from enum import Enum
 from urllib.parse import urlencode
 
 import requests
@@ -17,6 +18,7 @@ from google.auth.transport import requests as google_requests
 from google.cloud import secretmanager
 from google.cloud import storage
 from google.oauth2 import id_token
+from pydantic import BaseModel, Field, model_validator
 
 
 app = FastAPI(title="House Pricing Web BFF")
@@ -28,14 +30,25 @@ app.add_middleware(
         "https://gpincheiraa.github.io",
     ],
     allow_credentials=False,
-    allow_methods=["GET"],
-    allow_headers=["Authorization"],
+    allow_methods=[
+        "GET",
+        "POST",
+        "PUT",
+        "DELETE",
+    ],
+    allow_headers=[
+        "Authorization",
+        "Content-Type",
+    ],
 )
 
+
 logger = logging.getLogger(__name__)
-# ---------------------------------------------------------------------------
+
+
+# -----------------------------------------------------------------------------
 # Configuration
-# ---------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 GOOGLE_CLIENT_ID = os.environ["GOOGLE_CLIENT_ID"]
 GCP_PROJECT_ID = os.environ["GCP_PROJECT_ID"]
@@ -57,9 +70,9 @@ ML_TOKEN_ENCRYPTION_KEY_SECRET = "ml-token-encryption-key"
 OAUTH_STATE_TTL = 600
 
 
-# ---------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # Secret Manager
-# ---------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 def get_secret(secret_id: str) -> str:
     client = secretmanager.SecretManagerServiceClient()
@@ -103,9 +116,9 @@ def get_encryption_key() -> bytes:
     return key
 
 
-# ---------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # Google authentication
-# ---------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 def get_google_user(
     authorization: str | None,
@@ -159,9 +172,9 @@ def get_google_user(
     return claims
 
 
-# ---------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # PKCE
-# ---------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 def generate_code_verifier() -> str:
     return secrets.token_urlsafe(64)
@@ -179,9 +192,9 @@ def generate_code_challenge(
     ).rstrip(b"=").decode("ascii")
 
 
-# ---------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # OAuth state
-# ---------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 def create_state(
     google_user_id: str,
@@ -302,9 +315,9 @@ def validate_state(state: str) -> dict:
     return payload
 
 
-# ---------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # Mercado Libre credential encryption
-# ---------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 def encrypt_ml_credentials(
     google_user_id: str,
@@ -377,7 +390,10 @@ def save_ml_credentials(
         content_type="application/octet-stream",
     )
 
-def ml_credentials_exist(google_user_id: str) -> bool:
+
+def ml_credentials_exist(
+    google_user_id: str,
+) -> bool:
     storage_client = storage.Client()
 
     bucket = storage_client.bucket(GCS_BUCKET)
@@ -390,7 +406,10 @@ def ml_credentials_exist(google_user_id: str) -> bool:
 
     return blob.exists()
 
-def get_ml_user(access_token: str) -> dict:
+
+def get_ml_user(
+    access_token: str,
+) -> dict:
     response = requests.get(
         "https://api.mercadolibre.com/users/me",
         headers={
@@ -409,6 +428,7 @@ def get_ml_user(access_token: str) -> dict:
         )
 
     return response.json()
+
 
 def load_ml_credentials(
     google_user_id: str,
@@ -460,6 +480,7 @@ def load_ml_credentials(
     return json.loads(
         plaintext.decode("utf-8")
     )
+
 
 def refresh_ml_access_token(
     google_user_id: str,
@@ -531,7 +552,9 @@ def refresh_ml_access_token(
 # User Settings
 # -----------------------------------------------------------------------------
 
-def get_user_settings(google_user_id: str) -> dict:
+def get_user_settings(
+    google_user_id: str,
+) -> dict:
     storage_client = storage.Client()
 
     bucket = storage_client.bucket(GCS_BUCKET)
@@ -542,12 +565,32 @@ def get_user_settings(google_user_id: str) -> dict:
 
     if not blob.exists():
         return {
-            "searches": []
+            "searches": [],
         }
 
-    return json.loads(
+    settings = json.loads(
         blob.download_as_text()
     )
+
+    if not isinstance(settings, dict):
+        raise HTTPException(
+            status_code=500,
+            detail="Invalid user settings",
+        )
+
+    if "searches" not in settings:
+        settings["searches"] = []
+
+    if not isinstance(
+        settings["searches"],
+        list,
+    ):
+        raise HTTPException(
+            status_code=500,
+            detail="Invalid user searches",
+        )
+
+    return settings
 
 
 def save_user_settings(
@@ -571,28 +614,172 @@ def save_user_settings(
         content_type="application/json",
     )
 
+
+# -----------------------------------------------------------------------------
+# Search models
+# -----------------------------------------------------------------------------
+
+class SearchOperation(str, Enum):
+    RENT = "rent"
+    SALE = "sale"
+
+
+class SearchLocation(BaseModel):
+    region: str = Field(
+        min_length=1,
+        max_length=100,
+    )
+
+    communes: list[str] = Field(
+        default_factory=list,
+    )
+
+
+class SearchPrice(BaseModel):
+    min: int | None = Field(
+        default=None,
+        ge=0,
+    )
+
+    max: int | None = Field(
+        default=None,
+        ge=0,
+    )
+
+    currency: str = Field(
+        default="CLP",
+        min_length=3,
+        max_length=3,
+    )
+
+    @model_validator(mode="after")
+    def validate_range(self):
+        if (
+            self.min is not None
+            and self.max is not None
+            and self.min > self.max
+        ):
+            raise ValueError(
+                "Price minimum cannot exceed maximum"
+            )
+
+        return self
+
+
+class SearchProperty(BaseModel):
+    bedrooms_min: int | None = Field(
+        default=None,
+        ge=0,
+    )
+
+    bedrooms_max: int | None = Field(
+        default=None,
+        ge=0,
+    )
+
+    bathrooms_min: int | None = Field(
+        default=None,
+        ge=0,
+    )
+
+    bathrooms_max: int | None = Field(
+        default=None,
+        ge=0,
+    )
+
+    area_m2_min: float | None = Field(
+        default=None,
+        ge=0,
+    )
+
+    area_m2_max: float | None = Field(
+        default=None,
+        ge=0,
+    )
+
+    @model_validator(mode="after")
+    def validate_ranges(self):
+        if (
+            self.bedrooms_min is not None
+            and self.bedrooms_max is not None
+            and self.bedrooms_min > self.bedrooms_max
+        ):
+            raise ValueError(
+                "Bedrooms minimum cannot exceed maximum"
+            )
+
+        if (
+            self.bathrooms_min is not None
+            and self.bathrooms_max is not None
+            and self.bathrooms_min > self.bathrooms_max
+        ):
+            raise ValueError(
+                "Bathrooms minimum cannot exceed maximum"
+            )
+
+        if (
+            self.area_m2_min is not None
+            and self.area_m2_max is not None
+            and self.area_m2_min > self.area_m2_max
+        ):
+            raise ValueError(
+                "Area minimum cannot exceed maximum"
+            )
+
+        return self
+
+
+class SearchCreate(BaseModel):
+    enabled: bool = True
+
+    operation: SearchOperation
+
+    location: SearchLocation
+
+    price: SearchPrice = Field(
+        default_factory=SearchPrice,
+    )
+
+    property: SearchProperty = Field(
+        default_factory=SearchProperty,
+    )
+
+
+class Search(SearchCreate):
+    id: str
+
+
 # -----------------------------------------------------------------------------
 # User Searches
 # -----------------------------------------------------------------------------
 
-@app.get("/me/searches")
+@app.get(
+    "/me/searches",
+    response_model=dict,
+)
 def get_searches(
     authorization: str | None = Header(default=None),
 ) -> dict:
-    claims = get_google_user(authorization)
+    claims = get_google_user(
+        authorization
+    )
 
-    settings = get_user_settings(
+    return get_user_settings(
         claims["sub"]
     )
 
-    return settings
 
-@app.post("/me/searches")
+@app.post(
+    "/me/searches",
+    response_model=Search,
+)
 def create_search(
-    search: dict,
+    search: SearchCreate,
     authorization: str | None = Header(default=None),
-) -> dict:
-    claims = get_google_user(authorization)
+) -> Search:
+    claims = get_google_user(
+        authorization
+    )
 
     google_user_id = claims["sub"]
 
@@ -600,15 +787,13 @@ def create_search(
         google_user_id
     )
 
-    search_id = secrets.token_urlsafe(12)
-
-    new_search = {
-        "id": search_id,
-        **search,
-    }
+    new_search = Search(
+        id=secrets.token_urlsafe(12),
+        **search.model_dump(),
+    )
 
     settings["searches"].append(
-        new_search
+        new_search.model_dump(mode="json")
     )
 
     save_user_settings(
@@ -616,10 +801,129 @@ def create_search(
         settings,
     )
 
+    logger.info(
+        "Search created: %s",
+        {
+            "google_user": google_user_id,
+            "email": claims.get("email"),
+            "search_id": new_search.id,
+        },
+    )
+
     return new_search
-# ---------------------------------------------------------------------------
+
+
+@app.put(
+    "/me/searches/{search_id}",
+    response_model=Search,
+)
+def update_search(
+    search_id: str,
+    search: SearchCreate,
+    authorization: str | None = Header(default=None),
+) -> Search:
+    claims = get_google_user(
+        authorization
+    )
+
+    google_user_id = claims["sub"]
+
+    settings = get_user_settings(
+        google_user_id
+    )
+
+    for index, existing_search in enumerate(
+        settings["searches"]
+    ):
+        if existing_search.get("id") != search_id:
+            continue
+
+        updated_search = Search(
+            id=search_id,
+            **search.model_dump(),
+        )
+
+        settings["searches"][index] = (
+            updated_search.model_dump(mode="json")
+        )
+
+        save_user_settings(
+            google_user_id,
+            settings,
+        )
+
+        logger.info(
+            "Search updated: %s",
+            {
+                "google_user": google_user_id,
+                "email": claims.get("email"),
+                "search_id": search_id,
+            },
+        )
+
+        return updated_search
+
+    raise HTTPException(
+        status_code=404,
+        detail="Search not found",
+    )
+
+
+@app.delete(
+    "/me/searches/{search_id}",
+)
+def delete_search(
+    search_id: str,
+    authorization: str | None = Header(default=None),
+) -> dict:
+    claims = get_google_user(
+        authorization
+    )
+
+    google_user_id = claims["sub"]
+
+    settings = get_user_settings(
+        google_user_id
+    )
+
+    searches = settings["searches"]
+
+    for index, existing_search in enumerate(
+        searches
+    ):
+        if existing_search.get("id") != search_id:
+            continue
+
+        searches.pop(index)
+
+        save_user_settings(
+            google_user_id,
+            settings,
+        )
+
+        logger.info(
+            "Search deleted: %s",
+            {
+                "google_user": google_user_id,
+                "email": claims.get("email"),
+                "search_id": search_id,
+            },
+        )
+
+        return {
+            "deleted": True,
+            "id": search_id,
+        }
+
+    raise HTTPException(
+        status_code=404,
+        detail="Search not found",
+    )
+
+
+# -----------------------------------------------------------------------------
 # Health
-# ---------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 @app.get("/health")
 def health() -> dict[str, str]:
@@ -628,9 +932,9 @@ def health() -> dict[str, str]:
     }
 
 
-# ---------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # Google user
-# ---------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 @app.get("/me")
 def me(
@@ -651,9 +955,9 @@ def me(
     }
 
 
-# ---------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # Mercado Libre OAuth - authorization
-# ---------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 @app.get("/oauth/mercadolibre")
 def mercadolibre_authorize(
@@ -697,9 +1001,9 @@ def mercadolibre_authorize(
     }
 
 
-# ---------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # Mercado Libre OAuth - callback
-# ---------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 
 @app.get("/oauth/mercadolibre/callback")
 def mercadolibre_callback(
@@ -787,7 +1091,9 @@ def mercadolibre_callback(
 def me_mercadolibre(
     authorization: str | None = Header(default=None),
 ) -> dict:
-    claims = get_google_user(authorization)
+    claims = get_google_user(
+        authorization
+    )
 
     google_user_id = claims["sub"]
 
@@ -799,17 +1105,22 @@ def me_mercadolibre(
         "connected": connected,
     }
 
+
 @app.get("/me/mercadolibre/user")
 def me_mercadolibre_user(
     authorization: str | None = Header(default=None),
 ) -> dict:
-    claims = get_google_user(authorization)
+    claims = get_google_user(
+        authorization
+    )
 
     access_token = refresh_ml_access_token(
         claims["sub"]
     )
 
-    ml_user = get_ml_user(access_token)
+    ml_user = get_ml_user(
+        access_token
+    )
 
     return {
         "authenticated": True,
