@@ -123,4 +123,5 @@ jobs:
           gcloud run deploy ${{ env.WEB_BFF_NAME }} \
             --image=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.AR_REPOSITORY }}/${{ env.WEB_BFF_IMAGE }}:${{ github.sha }} \
             --region=${{ env.REGION }} \
-            --service-account=${{ env.RUNTIME_SA }}
+            --service-account=${{ env.RUNTIME_SA }} \
+            --set-env-vars=GOOGLE_CLIENT_ID=${{ vars.GOOGLE_CLIENT_ID }}
