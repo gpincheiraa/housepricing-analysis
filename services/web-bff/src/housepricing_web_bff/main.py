@@ -377,7 +377,18 @@ def save_ml_credentials(
         content_type="application/octet-stream",
     )
 
+def ml_credentials_exist(google_user_id: str) -> bool:
+    storage_client = storage.Client()
 
+    bucket = storage_client.bucket(GCS_BUCKET)
+
+    object_name = (
+        f"users/{google_user_id}/mercadolibre.json.enc"
+    )
+
+    blob = bucket.blob(object_name)
+
+    return blob.exists()
 # ---------------------------------------------------------------------------
 # Health
 # ---------------------------------------------------------------------------
@@ -541,4 +552,21 @@ def mercadolibre_callback(
     return {
         "status": "authorized",
         "ml_user_id": ml_user_id,
+    }
+
+
+@app.get("/me/mercadolibre")
+def me_mercadolibre(
+    authorization: str | None = Header(default=None),
+) -> dict:
+    claims = get_google_user(authorization)
+
+    google_user_id = claims["sub"]
+
+    connected = ml_credentials_exist(
+        google_user_id
+    )
+
+    return {
+        "connected": connected,
     }
