@@ -1,7 +1,5 @@
 const GOOGLE_CLIENT_ID = "366674000591-k5n9g6vo12vrk40egcmn1ht3cnvlrciv.apps.googleusercontent.com";
 
-const GOOGLE_CLIENT_ID = "...";
-
 const BFF_URL =
   "https://housepricing-web-bff-vyghkhukra-tl.a.run.app";
 
