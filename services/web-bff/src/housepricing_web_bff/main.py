@@ -1,10 +1,21 @@
 import os
 
 from fastapi import FastAPI, Header, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from google.auth.transport import requests
 from google.oauth2 import id_token
 
 app = FastAPI(title="House Pricing Web BFF")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://gpincheiraa.github.io",
+    ],
+    allow_credentials=False,
+    allow_methods=["GET"],
+    allow_headers=["Authorization"],
+)
 
 GOOGLE_CLIENT_ID = os.environ["GOOGLE_CLIENT_ID"]
 
