@@ -29,7 +29,7 @@ ML_REDIRECT_URI = (
     "/oauth/mercadolibre/callback"
 )
 
-ML_AUTH_URL = "https://auth.mercadolibre.com.ar/authorization"
+ML_AUTH_URL = "https://auth.mercadolibre.cl/authorization"
 ML_TOKEN_URL = "https://api.mercadolibre.com/oauth/token"
 
 
