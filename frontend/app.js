@@ -231,7 +231,223 @@ async function loadSearches() {
     data
   );
 
+  updateSearchesUI(data);
+
   return data;
+}
+
+
+// -----------------------------------------------------------------------------
+// Create search
+// -----------------------------------------------------------------------------
+
+async function createSearch(search) {
+  if (!googleIdToken) {
+    throw new Error(
+      "Google authentication required"
+    );
+  }
+
+  const response = await fetch(
+    `${BFF_URL}/me/searches`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${googleIdToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(search),
+    }
+  );
+
+  if (!response.ok) {
+    let detail = "";
+
+    try {
+      const error = await response.json();
+      detail = JSON.stringify(error);
+    } catch {
+      detail = await response.text();
+    }
+
+    throw new Error(
+      `Failed to create search: ${response.status} ${detail}`
+    );
+  }
+
+  const data = await response.json();
+
+  console.log(
+    "Search created:",
+    data
+  );
+
+  return data;
+}
+
+
+// -----------------------------------------------------------------------------
+// Search UI
+// -----------------------------------------------------------------------------
+
+function updateSearchesUI(data) {
+  const searchesElement =
+    document.getElementById("searches");
+
+  if (!searchesElement) {
+    return;
+  }
+
+  const searches = data.searches || [];
+
+  if (searches.length === 0) {
+    searchesElement.textContent =
+      "No hay búsquedas configuradas.";
+
+    return;
+  }
+
+  searchesElement.innerHTML = "";
+
+  searches.forEach((search) => {
+    const item =
+      document.createElement("div");
+
+    item.className =
+      "border rounded p-3 mb-2";
+
+    const name =
+      document.createElement("div");
+
+    name.className =
+      "fw-semibold";
+
+    name.textContent =
+      search.name || "Sin nombre";
+
+    const details =
+      document.createElement("div");
+
+    details.className =
+      "small text-body-secondary";
+
+    details.textContent =
+      [
+        search.operation === "rent"
+          ? "Arriendo"
+          : search.operation,
+        search.region,
+        search.communes?.join(", "),
+      ]
+        .filter(Boolean)
+        .join(" · ");
+
+    item.appendChild(name);
+    item.appendChild(details);
+
+    searchesElement.appendChild(item);
+  });
+}
+
+
+// -----------------------------------------------------------------------------
+// Search form
+// -----------------------------------------------------------------------------
+
+async function handleSearchSubmit(event) {
+  event.preventDefault();
+
+  const resultElement =
+    document.getElementById(
+      "search-form-result"
+    );
+
+  const communes = [
+    ...document.querySelectorAll(
+      "#search-form input[type='checkbox'][value]:checked"
+    ),
+  ].map(
+    (input) => input.value
+  );
+
+  try {
+    if (!googleIdToken) {
+      throw new Error(
+        "Debes iniciar sesión con Google."
+      );
+    }
+
+    if (communes.length === 0) {
+      throw new Error(
+        "Selecciona al menos una comuna."
+      );
+    }
+
+    const search = {
+      name:
+        document.getElementById(
+          "search-name"
+        ).value.trim(),
+
+      operation:
+        document.getElementById(
+          "search-operation"
+        ).value,
+
+      region:
+        document.getElementById(
+          "search-region"
+        ).value,
+
+      communes,
+
+      enabled:
+        document.getElementById(
+          "search-enabled"
+        ).checked,
+    };
+
+    resultElement.textContent =
+      "Guardando búsqueda...";
+
+    await createSearch(search);
+
+    await loadSearches();
+
+    resultElement.textContent =
+      "Búsqueda guardada correctamente.";
+
+    document.getElementById(
+      "search-form"
+    ).reset();
+
+    document.getElementById(
+      "search-enabled"
+    ).checked = true;
+
+    const modalElement =
+      document.getElementById(
+        "search-modal"
+      );
+
+    const modal =
+      bootstrap.Modal.getInstance(
+        modalElement
+      );
+
+    if (modal) {
+      modal.hide();
+    }
+
+  } catch (error) {
+    console.error(
+      "Search creation failed:",
+      error
+    );
+
+    resultElement.textContent =
+      error.message;
+  }
 }
 
 
@@ -273,6 +489,9 @@ function updateMercadoLibreUI(data) {
 document.addEventListener(
   "DOMContentLoaded",
   () => {
+
+    // Mercado Libre
+
     const connectButton =
       document.getElementById(
         "mercadolibre-connect"
@@ -293,5 +512,21 @@ document.addEventListener(
         }
       );
     }
+
+
+    // Search form
+
+    const searchForm =
+      document.getElementById(
+        "search-form"
+      );
+
+    if (searchForm) {
+      searchForm.addEventListener(
+        "submit",
+        handleSearchSubmit
+      );
+    }
+
   }
 );

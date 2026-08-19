@@ -1,7 +1,9 @@
 <!DOCTYPE html>
 <html lang="es" data-bs-theme="dark">
+
 <head>
   <meta charset="UTF-8">
+
   <meta
     name="viewport"
     content="width=device-width, initial-scale=1.0"
@@ -26,6 +28,7 @@
   ></script>
 </head>
 
+
 <body>
 
   <main class="container py-5">
@@ -34,16 +37,19 @@
 
       <div class="col-12 col-lg-8">
 
+
         <!-- Header -->
 
         <header class="text-center mb-5">
+
           <h1 class="display-6">
             House Pricing
           </h1>
 
-          <p class="text-body-secondary">
+          <p class="text-body-secondary mb-0">
             Encuentra departamentos en Chile
           </p>
+
         </header>
 
 
@@ -53,6 +59,7 @@
           id="google-login"
           class="card mb-4"
         >
+
           <div class="card-body text-center">
 
             <h2 class="h5 mb-3">
@@ -65,6 +72,7 @@
             ></div>
 
           </div>
+
         </section>
 
 
@@ -74,7 +82,7 @@
 
           <div class="card-body">
 
-            <h2 class="h5">
+            <h2 class="h5 mb-2">
               Mercado Libre
             </h2>
 
@@ -107,17 +115,23 @@
             <div
               class="d-flex justify-content-between align-items-center mb-3"
             >
+
               <h2 class="h5 mb-0">
                 Mis búsquedas
               </h2>
 
               <button
+                id="new-search-button"
                 type="button"
                 class="btn btn-outline-primary btn-sm"
+                data-bs-toggle="modal"
+                data-bs-target="#search-modal"
               >
                 Nueva búsqueda
               </button>
+
             </div>
+
 
             <div
               id="searches"
@@ -137,7 +151,7 @@
 
           <div class="card-body">
 
-            <h2 class="h6">
+            <h2 class="h6 mb-3">
               Resultado
             </h2>
 
@@ -157,9 +171,277 @@
   </main>
 
 
+  <!-- New search modal -->
+
+  <div
+    class="modal fade"
+    id="search-modal"
+    tabindex="-1"
+    aria-labelledby="search-modal-label"
+    aria-hidden="true"
+  >
+
+    <div class="modal-dialog">
+
+      <div class="modal-content">
+
+        <form id="search-form">
+
+
+          <!-- Modal header -->
+
+          <div class="modal-header">
+
+            <h2
+              class="modal-title fs-5"
+              id="search-modal-label"
+            >
+              Nueva búsqueda
+            </h2>
+
+            <button
+              type="button"
+              class="btn-close"
+              data-bs-dismiss="modal"
+              aria-label="Cerrar"
+            ></button>
+
+          </div>
+
+
+          <!-- Modal body -->
+
+          <div class="modal-body">
+
+
+            <!-- Name -->
+
+            <div class="mb-3">
+
+              <label
+                for="search-name"
+                class="form-label"
+              >
+                Nombre
+              </label>
+
+              <input
+                id="search-name"
+                type="text"
+                class="form-control"
+                placeholder="Arriendos Santiago"
+                required
+              >
+
+            </div>
+
+
+            <!-- Operation -->
+
+            <div class="mb-3">
+
+              <label
+                for="search-operation"
+                class="form-label"
+              >
+                Operación
+              </label>
+
+              <select
+                id="search-operation"
+                class="form-select"
+                required
+              >
+
+                <option value="rent">
+                  Arriendo
+                </option>
+
+              </select>
+
+            </div>
+
+
+            <!-- Region -->
+
+            <div class="mb-3">
+
+              <label
+                for="search-region"
+                class="form-label"
+              >
+                Región
+              </label>
+
+              <select
+                id="search-region"
+                class="form-select"
+                required
+              >
+
+                <option value="metropolitana">
+                  Metropolitana
+                </option>
+
+              </select>
+
+            </div>
+
+
+            <!-- Communes -->
+
+            <div class="mb-3">
+
+              <label class="form-label">
+                Comunas
+              </label>
+
+
+              <div class="form-check">
+
+                <input
+                  id="commune-santiago"
+                  class="form-check-input"
+                  type="checkbox"
+                  value="Santiago"
+                >
+
+                <label
+                  class="form-check-label"
+                  for="commune-santiago"
+                >
+                  Santiago
+                </label>
+
+              </div>
+
+
+              <div class="form-check">
+
+                <input
+                  id="commune-providencia"
+                  class="form-check-input"
+                  type="checkbox"
+                  value="Providencia"
+                >
+
+                <label
+                  class="form-check-label"
+                  for="commune-providencia"
+                >
+                  Providencia
+                </label>
+
+              </div>
+
+
+              <div class="form-check">
+
+                <input
+                  id="commune-nunoa"
+                  class="form-check-input"
+                  type="checkbox"
+                  value="Ñuñoa"
+                >
+
+                <label
+                  class="form-check-label"
+                  for="commune-nunoa"
+                >
+                  Ñuñoa
+                </label>
+
+              </div>
+
+
+              <div class="form-check">
+
+                <input
+                  id="commune-las-condes"
+                  class="form-check-input"
+                  type="checkbox"
+                  value="Las Condes"
+                >
+
+                <label
+                  class="form-check-label"
+                  for="commune-las-condes"
+                >
+                  Las Condes
+                </label>
+
+              </div>
+
+            </div>
+
+
+            <!-- Enabled -->
+
+            <div class="form-check form-switch">
+
+              <input
+                id="search-enabled"
+                class="form-check-input"
+                type="checkbox"
+                checked
+              >
+
+              <label
+                class="form-check-label"
+                for="search-enabled"
+              >
+                Búsqueda activa
+              </label>
+
+            </div>
+
+
+            <!-- Form result -->
+
+            <div
+              id="search-form-result"
+              class="mt-3"
+            ></div>
+
+          </div>
+
+
+          <!-- Modal footer -->
+
+          <div class="modal-footer">
+
+            <button
+              type="button"
+              class="btn btn-secondary"
+              data-bs-dismiss="modal"
+            >
+              Cancelar
+            </button>
+
+            <button
+              type="submit"
+              class="btn btn-primary"
+            >
+              Guardar búsqueda
+            </button>
+
+          </div>
+
+        </form>
+
+      </div>
+
+    </div>
+
+  </div>
+
+
+  <!-- Bootstrap -->
+
   <script
     src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"
   ></script>
 
 </body>
+
 </html>
