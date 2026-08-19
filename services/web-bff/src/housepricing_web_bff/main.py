@@ -4,10 +4,11 @@ from urllib.parse import urlencode
 
 import requests
 from fastapi import FastAPI, Header, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from google.auth.transport import requests as google_requests
-from google.oauth2 import id_token
 from google.cloud import secretmanager
+from google.oauth2 import id_token
 
 app = FastAPI(title="House Pricing Web BFF")
 
