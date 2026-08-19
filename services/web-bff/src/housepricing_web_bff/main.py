@@ -1,5 +1,10 @@
+import base64
+import hashlib
+import hmac
+import json
 import os
 import secrets
+import time
 from urllib.parse import urlencode
 
 import requests
@@ -24,13 +29,16 @@ app.add_middleware(
 GOOGLE_CLIENT_ID = os.environ["GOOGLE_CLIENT_ID"]
 GCP_PROJECT_ID = os.environ["GCP_PROJECT_ID"]
 
+ML_AUTH_URL = "https://auth.mercadolibre.cl/authorization"
+ML_TOKEN_URL = "https://api.mercadolibre.com/oauth/token"
+
 ML_REDIRECT_URI = (
     "https://housepricing-web-bff-vyghkhukra-tl.a.run.app"
     "/oauth/mercadolibre/callback"
 )
 
-ML_AUTH_URL = "https://auth.mercadolibre.cl/authorization"
-ML_TOKEN_URL = "https://api.mercadolibre.com/oauth/token"
+OAUTH_STATE_SECRET = "ml-oauth-state-secret"
+OAUTH_STATE_TTL = 600
 
 
 def get_secret(secret_id: str) -> str:
@@ -93,6 +101,130 @@ def get_google_user(
     return claims
 
 
+def generate_code_verifier() -> str:
+    return secrets.token_urlsafe(64)
+
+
+def generate_code_challenge(code_verifier: str) -> str:
+    digest = hashlib.sha256(
+        code_verifier.encode("ascii")
+    ).digest()
+
+    return base64.urlsafe_b64encode(
+        digest
+    ).rstrip(b"=").decode("ascii")
+
+
+def create_state(
+    google_user_id: str,
+    code_verifier: str,
+) -> str:
+    payload = {
+        "google_user": google_user_id,
+        "code_verifier": code_verifier,
+        "expires_at": int(time.time()) + OAUTH_STATE_TTL,
+        "nonce": secrets.token_urlsafe(16),
+    }
+
+    payload_bytes = json.dumps(
+        payload,
+        separators=(",", ":"),
+    ).encode("utf-8")
+
+    payload_encoded = base64.urlsafe_b64encode(
+        payload_bytes
+    ).rstrip(b"=").decode("ascii")
+
+    secret = get_secret(OAUTH_STATE_SECRET).encode("utf-8")
+
+    signature = hmac.new(
+        secret,
+        payload_encoded.encode("ascii"),
+        hashlib.sha256,
+    ).digest()
+
+    signature_encoded = base64.urlsafe_b64encode(
+        signature
+    ).rstrip(b"=").decode("ascii")
+
+    return f"{payload_encoded}.{signature_encoded}"
+
+
+def validate_state(state: str) -> dict:
+    try:
+        payload_encoded, signature_encoded = state.split(".", 1)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid OAuth state",
+        )
+
+    secret = get_secret(OAUTH_STATE_SECRET).encode("utf-8")
+
+    expected_signature = hmac.new(
+        secret,
+        payload_encoded.encode("ascii"),
+        hashlib.sha256,
+    ).digest()
+
+    try:
+        received_signature = base64.urlsafe_b64decode(
+            signature_encoded + "=" * (
+                -len(signature_encoded) % 4
+            )
+        )
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid OAuth state",
+        )
+
+    if not hmac.compare_digest(
+        received_signature,
+        expected_signature,
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid OAuth state",
+        )
+
+    try:
+        payload_bytes = base64.urlsafe_b64decode(
+            payload_encoded + "=" * (
+                -len(payload_encoded) % 4
+            )
+        )
+
+        payload = json.loads(
+            payload_bytes.decode("utf-8")
+        )
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid OAuth state",
+        )
+
+    if payload.get("expires_at", 0) < int(time.time()):
+        raise HTTPException(
+            status_code=400,
+            detail="Expired OAuth state",
+        )
+
+    if not payload.get("google_user"):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid OAuth state",
+        )
+
+    if not payload.get("code_verifier"):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid OAuth state",
+        )
+
+    return payload
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
@@ -125,7 +257,15 @@ def mercadolibre_authorize(
 
     client_id, _ = get_ml_credentials()
 
-    state = secrets.token_urlsafe(32)
+    code_verifier = generate_code_verifier()
+    code_challenge = generate_code_challenge(
+        code_verifier
+    )
+
+    state = create_state(
+        google_user_id,
+        code_verifier,
+    )
 
     authorization_url = (
         f"{ML_AUTH_URL}?"
@@ -135,13 +275,14 @@ def mercadolibre_authorize(
                 "client_id": client_id,
                 "redirect_uri": ML_REDIRECT_URI,
                 "state": state,
+                "code_challenge": code_challenge,
+                "code_challenge_method": "S256",
             }
         )
     )
 
     return {
         "authorization_url": authorization_url,
-        "google_user": google_user_id,
     }
 
 
@@ -150,6 +291,10 @@ def mercadolibre_callback(
     code: str,
     state: str,
 ):
+    state_data = validate_state(state)
+
+    code_verifier = state_data["code_verifier"]
+
     client_id, client_secret = get_ml_credentials()
 
     response = requests.post(
@@ -160,6 +305,7 @@ def mercadolibre_callback(
             "client_secret": client_secret,
             "code": code,
             "redirect_uri": ML_REDIRECT_URI,
+            "code_verifier": code_verifier,
         },
         timeout=15,
     )
@@ -167,11 +313,7 @@ def mercadolibre_callback(
     if not response.ok:
         raise HTTPException(
             status_code=502,
-            detail={
-                "message": "Mercado Libre token exchange failed",
-                "status": response.status_code,
-                "response": response.text,
-            },
+            detail="Mercado Libre token exchange failed",
         )
 
     tokens = response.json()
