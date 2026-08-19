@@ -1,60 +1,126 @@
-name: Deploy Cloud Run Job
+name: Deploy
 
 on:
   push:
     branches:
       - main
-  workflow_dispatch:
+    paths:
+      - "services/**"
+      - ".github/workflows/deploy.yml"
+
+permissions:
+  contents: read
+  id-token: write
 
 env:
   PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
   REGION: ${{ vars.GCP_REGION }}
-  REPOSITORY: ${{ vars.GCP_ARTIFACT_REPOSITORY }}
+  AR_REPOSITORY: ${{ vars.GCP_ARTIFACT_REPOSITORY }}
+  WIF_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+  DEPLOYER_SA: ${{ vars.GCP_DEPLOYER_SERVICE_ACCOUNT }}
+  RUNTIME_SA: ${{ vars.GCP_RUNTIME_SERVICE_ACCOUNT }}
+
   JOB_NAME: housepricing-analysis
-  RUNTIME_SERVICE_ACCOUNT: ${{ vars.GCP_RUNTIME_SERVICE_ACCOUNT }}
+  JOB_IMAGE: housepricing-job
+
+  WEB_BFF_NAME: housepricing-web-bff
+  WEB_BFF_IMAGE: housepricing-web-bff
 
 jobs:
-  deploy:
-    runs-on: ubuntu-latest
 
-    permissions:
-      contents: read
-      id-token: write
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      job: ${{ steps.filter.outputs.job }}
+      web-bff: ${{ steps.filter.outputs.web-bff }}
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            job:
+              - 'services/job/**'
+            web-bff:
+              - 'services/web-bff/**'
+
+  deploy-job:
+    needs: changes
+    if: needs.changes.outputs.job == 'true'
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ vars.GCP_DEPLOYER_SERVICE_ACCOUNT }}
-
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.DEPLOYER_SA }}
 
       - name: Configure Docker
         run: |
-          gcloud auth configure-docker "${{ env.REGION }}-docker.pkg.dev" --quiet
+          gcloud auth configure-docker \
+            ${{ env.REGION }}-docker.pkg.dev \
+            --quiet
 
       - name: Build image
         run: |
-          IMAGE="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.JOB_NAME }}:${{ github.sha }}"
-
           docker build \
-            --tag "${IMAGE}" \
-            .
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.AR_REPOSITORY }}/${{ env.JOB_IMAGE }}:${{ github.sha }} \
+            services/job
 
-          docker push "${IMAGE}"
+      - name: Push image
+        run: |
+          docker push \
+            ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.AR_REPOSITORY }}/${{ env.JOB_IMAGE }}:${{ github.sha }}
 
       - name: Deploy Cloud Run Job
         run: |
-          IMAGE="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.JOB_NAME }}:${{ github.sha }}"
+          gcloud run jobs deploy ${{ env.JOB_NAME }} \
+            --image=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.AR_REPOSITORY }}/${{ env.JOB_IMAGE }}:${{ github.sha }} \
+            --region=${{ env.REGION }} \
+            --service-account=${{ env.RUNTIME_SA }} \
+            --set-env-vars=GCS_BUCKET=${{ vars.GCS_BUCKET }}
 
-          gcloud run jobs deploy "${{ env.JOB_NAME }}" \
-            --image "${IMAGE}" \
-            --region "${{ env.REGION }}" \
-            --service-account "${{ env.RUNTIME_SERVICE_ACCOUNT }}" \
-            --set-env-vars "BUCKET_NAME=${{ vars.GCS_BUCKET }}" \
-            --set-env-vars "GOOGLE_CLOUD_PROJECT=${{ env.PROJECT_ID }}"
+  deploy-web-bff:
+    needs: changes
+    if: needs.changes.outputs.web-bff == 'true'
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.DEPLOYER_SA }}
+
+      - name: Configure Docker
+        run: |
+          gcloud auth configure-docker \
+            ${{ env.REGION }}-docker.pkg.dev \
+            --quiet
+
+      - name: Build image
+        run: |
+          docker build \
+            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.AR_REPOSITORY }}/${{ env.WEB_BFF_IMAGE }}:${{ github.sha }} \
+            services/web-bff
+
+      - name: Push image
+        run: |
+          docker push \
+            ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.AR_REPOSITORY }}/${{ env.WEB_BFF_IMAGE }}:${{ github.sha }}
+
+      - name: Deploy Cloud Run Service
+        run: |
+          gcloud run deploy ${{ env.WEB_BFF_NAME }} \
+            --image=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.AR_REPOSITORY }}/${{ env.WEB_BFF_IMAGE }}:${{ github.sha }} \
+            --region=${{ env.REGION }} \
+            --service-account=${{ env.RUNTIME_SA }}
