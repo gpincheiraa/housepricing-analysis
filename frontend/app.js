@@ -1,4 +1,5 @@
-const GOOGLE_CLIENT_ID = "366674000591-k5n9g6vo12vrk40egcmn1ht3cnvlrciv.apps.googleusercontent.com";
+const GOOGLE_CLIENT_ID =
+  "366674000591-k5n9g6vo12vrk40egcmn1ht3cnvlrciv.apps.googleusercontent.com";
 
 const BFF_URL =
   "https://housepricing-web-bff-vyghkhukra-tl.a.run.app";
@@ -47,6 +48,7 @@ async function handleGoogleCredential(response) {
 
     await loadCurrentUser();
     await loadMercadoLibreStatus();
+    await loadSearches();
 
   } catch (error) {
     console.error(
@@ -187,10 +189,10 @@ async function connectMercadoLibre() {
 
 
 // -----------------------------------------------------------------------------
-// Mercado Libre refresh token test
+// User searches
 // -----------------------------------------------------------------------------
 
-async function testMercadoLibreRefresh() {
+async function loadSearches() {
   if (!googleIdToken) {
     throw new Error(
       "Google authentication required"
@@ -198,7 +200,7 @@ async function testMercadoLibreRefresh() {
   }
 
   const response = await fetch(
-    `${BFF_URL}/me/mercadolibre/test`,
+    `${BFF_URL}/me/searches`,
     {
       method: "GET",
       headers: {
@@ -218,14 +220,14 @@ async function testMercadoLibreRefresh() {
     }
 
     throw new Error(
-      `Mercado Libre refresh failed: ${response.status} ${detail}`
+      `Failed to load searches: ${response.status} ${detail}`
     );
   }
 
   const data = await response.json();
 
   console.log(
-    "Mercado Libre refresh test:",
+    "User searches:",
     data
   );
 
@@ -248,11 +250,6 @@ function updateMercadoLibreUI(data) {
       "mercadolibre-connect"
     );
 
-  const testButton =
-    document.getElementById(
-      "mercadolibre-test"
-    );
-
   if (statusElement) {
     statusElement.textContent =
       data.connected
@@ -265,13 +262,6 @@ function updateMercadoLibreUI(data) {
       data.connected
         ? "none"
         : "block";
-  }
-
-  if (testButton) {
-    testButton.style.display =
-      data.connected
-        ? "block"
-        : "none";
   }
 }
 
@@ -297,33 +287,6 @@ document.addEventListener(
           } catch (error) {
             console.error(
               "Mercado Libre connection failed:",
-              error
-            );
-          }
-        }
-      );
-    }
-
-    const testButton =
-      document.getElementById(
-        "mercadolibre-test"
-      );
-
-    if (testButton) {
-      testButton.addEventListener(
-        "click",
-        async () => {
-          try {
-            const result =
-              await testMercadoLibreRefresh();
-
-            console.log(
-              "Refresh test result:",
-              result
-            );
-          } catch (error) {
-            console.error(
-              "Mercado Libre refresh test failed:",
               error
             );
           }
