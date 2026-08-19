@@ -526,6 +526,97 @@ def refresh_ml_access_token(
 
     return access_token
 
+
+# -----------------------------------------------------------------------------
+# User Settings
+# -----------------------------------------------------------------------------
+
+def get_user_settings(google_user_id: str) -> dict:
+    storage_client = storage.Client()
+
+    bucket = storage_client.bucket(GCS_BUCKET)
+
+    blob = bucket.blob(
+        f"users/{google_user_id}/settings.json"
+    )
+
+    if not blob.exists():
+        return {
+            "searches": []
+        }
+
+    return json.loads(
+        blob.download_as_text()
+    )
+
+
+def save_user_settings(
+    google_user_id: str,
+    settings: dict,
+) -> None:
+    storage_client = storage.Client()
+
+    bucket = storage_client.bucket(GCS_BUCKET)
+
+    blob = bucket.blob(
+        f"users/{google_user_id}/settings.json"
+    )
+
+    blob.upload_from_string(
+        json.dumps(
+            settings,
+            ensure_ascii=False,
+            indent=2,
+        ),
+        content_type="application/json",
+    )
+
+# -----------------------------------------------------------------------------
+# User Searches
+# -----------------------------------------------------------------------------
+
+@app.get("/me/searches")
+def get_searches(
+    authorization: str | None = Header(default=None),
+) -> dict:
+    claims = get_google_user(authorization)
+
+    settings = get_user_settings(
+        claims["sub"]
+    )
+
+    return settings
+
+@app.post("/me/searches")
+def create_search(
+    search: dict,
+    authorization: str | None = Header(default=None),
+) -> dict:
+    claims = get_google_user(authorization)
+
+    google_user_id = claims["sub"]
+
+    settings = get_user_settings(
+        google_user_id
+    )
+
+    search_id = secrets.token_urlsafe(12)
+
+    new_search = {
+        "id": search_id,
+        **search,
+    }
+
+    settings["searches"].append(
+        new_search
+    )
+
+    save_user_settings(
+        google_user_id,
+        settings,
+    )
+
+    return new_search
 # ---------------------------------------------------------------------------
 # Health
 # ---------------------------------------------------------------------------
