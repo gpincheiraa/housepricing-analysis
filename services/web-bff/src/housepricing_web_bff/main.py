@@ -389,6 +389,123 @@ def ml_credentials_exist(google_user_id: str) -> bool:
     blob = bucket.blob(object_name)
 
     return blob.exists()
+
+def load_ml_credentials(
+    google_user_id: str,
+) -> dict:
+    storage_client = storage.Client()
+
+    bucket = storage_client.bucket(GCS_BUCKET)
+
+    object_name = (
+        f"users/{google_user_id}/mercadolibre.json.enc"
+    )
+
+    blob = bucket.blob(object_name)
+
+    if not blob.exists():
+        raise HTTPException(
+            status_code=404,
+            detail="Mercado Libre account not connected",
+        )
+
+    encrypted_document = json.loads(
+        blob.download_as_text()
+    )
+
+    key = get_encryption_key()
+
+    aes = AESGCM(key)
+
+    nonce = base64.b64decode(
+        encrypted_document["nonce"]
+    )
+
+    ciphertext = base64.b64decode(
+        encrypted_document["ciphertext"]
+    )
+
+    try:
+        plaintext = aes.decrypt(
+            nonce,
+            ciphertext,
+            google_user_id.encode("utf-8"),
+        )
+    except Exception:
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to decrypt Mercado Libre credentials",
+        )
+
+    return json.loads(
+        plaintext.decode("utf-8")
+    )
+
+def refresh_ml_access_token(
+    google_user_id: str,
+) -> str:
+    credentials = load_ml_credentials(
+        google_user_id
+    )
+
+    refresh_token = credentials[
+        "refresh_token"
+    ]
+
+    client_id, client_secret = get_ml_credentials()
+
+    response = requests.post(
+        ML_TOKEN_URL,
+        data={
+            "grant_type": "refresh_token",
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "refresh_token": refresh_token,
+        },
+        timeout=15,
+    )
+
+    if not response.ok:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "message": "Mercado Libre token refresh failed",
+                "status": response.status_code,
+            },
+        )
+
+    tokens = response.json()
+
+    access_token = tokens.get(
+        "access_token"
+    )
+
+    if not access_token:
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                "Mercado Libre did not return "
+                "access token"
+            ),
+        )
+
+    new_refresh_token = tokens.get(
+        "refresh_token"
+    )
+
+    if new_refresh_token:
+        credentials["refresh_token"] = (
+            new_refresh_token
+        )
+
+        save_ml_credentials(
+            google_user_id=google_user_id,
+            ml_user_id=credentials["ml_user_id"],
+            refresh_token=new_refresh_token,
+        )
+
+    return access_token
+
 # ---------------------------------------------------------------------------
 # Health
 # ---------------------------------------------------------------------------
@@ -569,4 +686,24 @@ def me_mercadolibre(
 
     return {
         "connected": connected,
+    }
+
+@app.get("/me/mercadolibre/test")
+def test_mercadolibre(
+    authorization: str | None = Header(default=None),
+) -> dict:
+    claims = get_google_user(
+        authorization
+    )
+
+    access_token = refresh_ml_access_token(
+        claims["sub"]
+    )
+
+    return {
+        "authenticated": True,
+        "mercadolibre": True,
+        "access_token_obtained": bool(
+            access_token
+        ),
     }
