@@ -84,7 +84,7 @@ jobs:
             --image=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.AR_REPOSITORY }}/${{ env.JOB_IMAGE }}:${{ github.sha }} \
             --region=${{ env.REGION }} \
             --service-account=${{ env.RUNTIME_SA }} \
-            --set-env-vars=GCS_BUCKET=${{ vars.GCS_BUCKET }}
+            --set-env-vars=GCS_BUCKET=${{ vars.GCS_BUCKET }},GOOGLE_CLOUD_PROJECT=${{ env.PROJECT_ID }}
 
   deploy-web-bff:
     needs: changes
