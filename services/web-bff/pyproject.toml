@@ -13,6 +13,8 @@ dependencies = [
     "google-auth>=2.38,<3.0",
     "requests>=2.32,<3.0",
     "google-cloud-secret-manager>=2.24,<3.0",
+    "google-cloud-storage>=3.0,<4.0",
+    "cryptography>=45.0,<46.0",
 ]
 
 [tool.setuptools.packages.find]
