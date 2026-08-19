@@ -1,7 +1,17 @@
 const GOOGLE_CLIENT_ID = "366674000591-k5n9g6vo12vrk40egcmn1ht3cnvlrciv.apps.googleusercontent.com";
 
+const GOOGLE_CLIENT_ID = "...";
+
 const BFF_URL =
   "https://housepricing-web-bff-vyghkhukra-tl.a.run.app";
+
+let googleIdToken = null;
+let currentUser = null;
+
+
+// -----------------------------------------------------------------------------
+// Google Identity Services
+// -----------------------------------------------------------------------------
 
 window.onload = () => {
   google.accounts.id.initialize({
@@ -10,82 +20,317 @@ window.onload = () => {
   });
 
   google.accounts.id.renderButton(
-    document.getElementById("google-login"),
+    document.getElementById("google-signin-button"),
     {
       theme: "outline",
       size: "large",
-    },
+    }
   );
 };
 
+
+// -----------------------------------------------------------------------------
+// Google authentication
+// -----------------------------------------------------------------------------
+
 async function handleGoogleCredential(response) {
-  const result = document.getElementById("result");
-
-  result.textContent = "Autenticando con Google...";
-
   try {
-    // 1. Validar identidad contra nuestro BFF
-    const bffResponse = await fetch(`${BFF_URL}/me`, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${response.credential}`,
-      },
-    });
+    googleIdToken = response.credential;
 
-    const userData = await bffResponse.json();
-
-    if (!bffResponse.ok) {
+    if (!googleIdToken) {
       throw new Error(
-        userData.detail || "No fue posible autenticar al usuario",
+        "Google ID token not received"
       );
     }
 
-    result.textContent =
-      `Usuario autenticado:\n\n` +
-      `${JSON.stringify(userData, null, 2)}\n\n` +
-      `Generando conexión con Mercado Libre...`;
-
-    // 2. Pedir al BFF la URL de autorización de Mercado Libre
-    const mlResponse = await fetch(
-      `${BFF_URL}/oauth/mercadolibre`,
-      {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${response.credential}`,
-        },
-      },
+    console.log(
+      "Google authentication completed"
     );
 
-    const mlData = await mlResponse.json();
+    await loadCurrentUser();
+    await loadMercadoLibreStatus();
 
-    if (!mlResponse.ok) {
-      throw new Error(
-        mlData.detail ||
-        "No fue posible iniciar la autenticación con Mercado Libre",
+  } catch (error) {
+    console.error(
+      "Google authentication failed:",
+      error
+    );
+
+    googleIdToken = null;
+    currentUser = null;
+  }
+}
+
+
+// -----------------------------------------------------------------------------
+// Current Google user
+// -----------------------------------------------------------------------------
+
+async function loadCurrentUser() {
+  const response = await fetch(
+    `${BFF_URL}/me`,
+    {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${googleIdToken}`,
+      },
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `Failed to load user: ${response.status}`
+    );
+  }
+
+  const data = await response.json();
+
+  currentUser = data.user;
+
+  console.log(
+    "Authenticated user:",
+    {
+      email: currentUser.email,
+      name: currentUser.name,
+    }
+  );
+
+  return currentUser;
+}
+
+
+// -----------------------------------------------------------------------------
+// Mercado Libre connection status
+// -----------------------------------------------------------------------------
+
+async function loadMercadoLibreStatus() {
+  if (!googleIdToken) {
+    throw new Error(
+      "Google authentication required"
+    );
+  }
+
+  const response = await fetch(
+    `${BFF_URL}/me/mercadolibre`,
+    {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${googleIdToken}`,
+      },
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `Failed to load Mercado Libre status: ${response.status}`
+    );
+  }
+
+  const data = await response.json();
+
+  console.log(
+    "Mercado Libre status:",
+    data
+  );
+
+  updateMercadoLibreUI(data);
+
+  return data;
+}
+
+
+// -----------------------------------------------------------------------------
+// Mercado Libre OAuth
+// -----------------------------------------------------------------------------
+
+async function connectMercadoLibre() {
+  if (!googleIdToken) {
+    throw new Error(
+      "Google authentication required"
+    );
+  }
+
+  const response = await fetch(
+    `${BFF_URL}/oauth/mercadolibre`,
+    {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${googleIdToken}`,
+      },
+    }
+  );
+
+  if (!response.ok) {
+    let detail = "";
+
+    try {
+      const error = await response.json();
+      detail = JSON.stringify(error);
+    } catch {
+      detail = await response.text();
+    }
+
+    throw new Error(
+      `Failed to start Mercado Libre OAuth: ${response.status} ${detail}`
+    );
+  }
+
+  const data = await response.json();
+
+  if (!data.authorization_url) {
+    throw new Error(
+      "Mercado Libre authorization URL not received"
+    );
+  }
+
+  window.location.href =
+    data.authorization_url;
+}
+
+
+// -----------------------------------------------------------------------------
+// Mercado Libre refresh token test
+// -----------------------------------------------------------------------------
+
+async function testMercadoLibreRefresh() {
+  if (!googleIdToken) {
+    throw new Error(
+      "Google authentication required"
+    );
+  }
+
+  const response = await fetch(
+    `${BFF_URL}/me/mercadolibre/test`,
+    {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${googleIdToken}`,
+      },
+    }
+  );
+
+  if (!response.ok) {
+    let detail = "";
+
+    try {
+      const error = await response.json();
+      detail = JSON.stringify(error);
+    } catch {
+      detail = await response.text();
+    }
+
+    throw new Error(
+      `Mercado Libre refresh failed: ${response.status} ${detail}`
+    );
+  }
+
+  const data = await response.json();
+
+  console.log(
+    "Mercado Libre refresh test:",
+    data
+  );
+
+  return data;
+}
+
+
+// -----------------------------------------------------------------------------
+// UI
+// -----------------------------------------------------------------------------
+
+function updateMercadoLibreUI(data) {
+  const statusElement =
+    document.getElementById(
+      "mercadolibre-status"
+    );
+
+  const connectButton =
+    document.getElementById(
+      "mercadolibre-connect"
+    );
+
+  const testButton =
+    document.getElementById(
+      "mercadolibre-test"
+    );
+
+  if (statusElement) {
+    statusElement.textContent =
+      data.connected
+        ? "Mercado Libre: conectado"
+        : "Mercado Libre: no conectado";
+  }
+
+  if (connectButton) {
+    connectButton.style.display =
+      data.connected
+        ? "none"
+        : "block";
+  }
+
+  if (testButton) {
+    testButton.style.display =
+      data.connected
+        ? "block"
+        : "none";
+  }
+}
+
+
+// -----------------------------------------------------------------------------
+// UI events
+// -----------------------------------------------------------------------------
+
+document.addEventListener(
+  "DOMContentLoaded",
+  () => {
+    const connectButton =
+      document.getElementById(
+        "mercadolibre-connect"
+      );
+
+    if (connectButton) {
+      connectButton.addEventListener(
+        "click",
+        async () => {
+          try {
+            await connectMercadoLibre();
+          } catch (error) {
+            console.error(
+              "Mercado Libre connection failed:",
+              error
+            );
+          }
+        }
       );
     }
 
-    // 3. Mostrar información de prueba
-    result.textContent =
-      `Usuario autenticado:\n\n` +
-      `${JSON.stringify(userData, null, 2)}\n\n` +
-      `Mercado Libre:\n\n` +
-      `${JSON.stringify(
-        {
-          google_user: mlData.google_user,
-          authorization_url: mlData.authorization_url,
-        },
-        null,
-        2,
-      )}`;
+    const testButton =
+      document.getElementById(
+        "mercadolibre-test"
+      );
 
-    // 4. Abrir Mercado Libre
-    window.location.href = mlData.authorization_url;
+    if (testButton) {
+      testButton.addEventListener(
+        "click",
+        async () => {
+          try {
+            const result =
+              await testMercadoLibreRefresh();
 
-  } catch (error) {
-    console.error(error);
-
-    result.textContent =
-      `Error:\n\n${error.message}`;
+            console.log(
+              "Refresh test result:",
+              result
+            );
+          } catch (error) {
+            console.error(
+              "Mercado Libre refresh test failed:",
+              error
+            );
+          }
+        }
+      );
+    }
   }
-}
+);

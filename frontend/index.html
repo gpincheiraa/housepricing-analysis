@@ -2,19 +2,50 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+  >
 
   <title>House Pricing</title>
 
-  <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <script src="./app.js" defer></script>
+  <script
+    src="https://accounts.google.com/gsi/client"
+    async
+    defer
+  ></script>
+
+  <script
+    src="./app.js"
+    defer
+  ></script>
 </head>
 
 <body>
   <h1>House Pricing</h1>
 
-  <div id="google-login"></div>
+  <div id="google-signin-button"></div>
 
-  <pre id="result"></pre>
+  <hr>
+
+  <h2>Mercado Libre</h2>
+
+  <div id="mercadolibre-status">
+    Mercado Libre: verificando...
+  </div>
+
+  <button
+    id="mercadolibre-connect"
+    type="button"
+  >
+    Conectar Mercado Libre
+  </button>
+
+  <button
+    id="mercadolibre-test"
+    type="button"
+  >
+    Probar conexión Mercado Libre
+  </button>
 </body>
 </html>
