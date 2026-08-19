@@ -167,7 +167,11 @@ def mercadolibre_callback(
     if not response.ok:
         raise HTTPException(
             status_code=502,
-            detail="Mercado Libre token exchange failed",
+            detail={
+                "message": "Mercado Libre token exchange failed",
+                "status": response.status_code,
+                "response": response.text,
+            },
         )
 
     tokens = response.json()
